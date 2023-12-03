@@ -1,20 +1,16 @@
 package xyz.lazyrabbit.processor;
 
-import com.squareup.javapoet.ClassName;
-import com.squareup.javapoet.JavaFile;
-import com.squareup.javapoet.ParameterizedTypeName;
-import com.squareup.javapoet.TypeSpec;
-import xyz.lazyrabbit.annotation.RabbMapper;
-
-import javax.annotation.processing.*;
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.RoundEnvironment;
+import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
-import javax.lang.model.element.*;
-import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.Elements;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.TypeElement;
+import javax.tools.JavaFileObject;
 import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.util.Map;
-import java.util.Objects;
+import java.io.Writer;
 import java.util.Set;
 
 // 指定我们这个注解处理器能够处理的注解，写我们想要处理的注解
@@ -22,94 +18,49 @@ import java.util.Set;
 @SupportedSourceVersion(value = SourceVersion.RELEASE_8)
 public class RabbMapperProcessor extends AbstractProcessor {
 
-    private Filer filer;
-    private Elements elementUtils;
-
-    @Override
-    public synchronized void init(ProcessingEnvironment processingEnvironment) {
-        super.init(processingEnvironment);
-        elementUtils = processingEnvironment.getElementUtils();
-        filer = processingEnvironment.getFiler();
-    }
-
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         System.err.println("RabbMapperProcessor");
-        if (annotations.isEmpty()) {
-            return false;
+        for (TypeElement annotation : annotations) {
+            for (Element element : roundEnv.getElementsAnnotatedWith(annotation)) {
+                if (element.getKind() == ElementKind.INTERFACE) {
+                    String className = element.getSimpleName().toString();
+                    String packageName = processingEnv.getElementUtils().getPackageOf(element).toString();
+                    generateSerializerClass(packageName, className);
+                }
+            }
         }
-        parseElement(roundEnv, RabbMapper.class);
+
         return true;
     }
 
-    private void parseElement(RoundEnvironment roundEnvironment, Class<? extends Annotation> annotationClass) {
-        Set<? extends Element> elements = roundEnvironment.getElementsAnnotatedWith(annotationClass);
-        for (Element element : elements) {
-            String packageName = elementUtils.getPackageOf(element).getQualifiedName().toString();
-            String className = element.getSimpleName().toString();
-            ClassName elementClass = ClassName.get(packageName, className);
-            mapperProcess(element, packageName, className, elementClass);
-        }
-    }
+    private void generateSerializerClass(String packageName, String className) {
+        String serializerClassName = className + "Serializer";
 
-    private void mapperProcess(Element element, String packageName, String className, ClassName elementClass) {
-        RabbMapper rabbMapper = element.getAnnotation(RabbMapper.class);
+        StringBuilder serializerClassCode = new StringBuilder();
+        serializerClassCode.append("package ").append(packageName).append(";\n\n");
+        serializerClassCode.append("import java.io.Serializable;\n");
+        serializerClassCode.append("import java.io.ObjectOutputStream;\n");
+        serializerClassCode.append("import java.io.IOException;\n\n");
+        serializerClassCode.append("public class ").append(serializerClassName)
+                .append(" implements Serializable {\n\n");
+        serializerClassCode.append(" private static final long serialVersionUID = 1L;\n\n");
+        serializerClassCode.append(" public static void serialize(").append(className)
+                .append(" obj, ObjectOutputStream out) throws IOException {\n");
+        serializerClassCode.append(" out.writeObject(obj);\n");
+        serializerClassCode.append(" }\n");
 
-        // mapper 类名
-        String name = className + "Mapper";
+        serializerClassCode.append("}\n");
 
-        TypeMirror baseMapperTypeMirror = readValue(element, RabbMapper.class, "baseMapper");
-
-
-        // 处理父类BaseMapper
-        ParameterizedTypeName baseMapperType = null;
-        if (baseMapperTypeMirror != null && !Objects.equals(baseMapperTypeMirror.toString(), Void.class.getName())) {
-            baseMapperType = ParameterizedTypeName.get((ClassName) ClassName.get(baseMapperTypeMirror), elementClass);
-        }
-
-        // 构建需要生成的java类
-        TypeSpec.Builder builder = TypeSpec.interfaceBuilder(name).addModifiers(Modifier.PUBLIC);
-
-        if (baseMapperType != null) {
-            builder.addSuperinterface(baseMapperType);
-        }
-        JavaFile javaFile = JavaFile.builder(packageName + ".mapper", builder.build()).build();
-        System.err.printf("", javaFile.toString());
         try {
-            // 生成类文件
-            javaFile.writeTo(filer);
+            JavaFileObject serializerFile = processingEnv.getFiler().createSourceFile(packageName + "." + serializerClassName);
+            try (Writer writer = serializerFile.openWriter()) {
+                writer.write(serializerClassCode.toString());
+            }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
         }
-    }
-
-    private AnnotationMirror getEventTypeAnnotationMirror(Element element, Class<?> clazz) {
-        String clazzName = clazz.getName();
-        for (AnnotationMirror annotationMirror : element.getAnnotationMirrors()) {
-            if (Objects.equals(annotationMirror.getAnnotationType().toString(), clazzName)) {
-                return annotationMirror;
-            }
-        }
-        return null;
-    }
-
-    private AnnotationValue getAnnotationValue(AnnotationMirror annotationMirror, String key) {
-        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : annotationMirror.getElementValues().entrySet()) {
-            if (Objects.equals(key, entry.getKey().getSimpleName().toString())) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    private <T> T readValue(Element element, Class<?> clazz, String key) {
-        AnnotationMirror am = getEventTypeAnnotationMirror(element, clazz);
-        AnnotationValue av = null;
-        if (am != null) {
-            av = getAnnotationValue(am, key);
-        }
-        return av == null ? null : (T) av.getValue();
     }
 
 }
