@@ -1,12 +1,14 @@
-package xyz.lazyrabbit.pojo.vo;
+package xyz.lazyrabbit.pojo.qo;
 
 import java.time.LocalDateTime;
 
-public class UserVO {
+public class UserQO {
 
     private String name;
     private Integer age;
+    private String password;
     private LocalDateTime createTime;
+
 
     public String getName() {
         return name;
@@ -24,6 +26,14 @@ public class UserVO {
         this.age = age;
     }
 
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
     public LocalDateTime getCreateTime() {
         return createTime;
     }
@@ -34,9 +44,10 @@ public class UserVO {
 
     @Override
     public String toString() {
-        return "UserVO{" +
+        return "UserDO{" +
                 "name='" + name + '\'' +
                 ", age=" + age +
+                ", password='" + password + '\'' +
                 ", createTime=" + createTime +
                 '}';
     }
